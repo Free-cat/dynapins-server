@@ -1,0 +1,33 @@
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Tests
+*_test.go
+coverage/
+*.cover
+
+# Documentation
+*.md
+!README.md
+
+# Build artifacts
+server
+pinning-server
+
+# Environment
+.env
+.env.*
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
