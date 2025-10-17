@@ -351,7 +351,7 @@ Pre-built multi-platform images: [freecats/dynapins-server](https://hub.docker.c
 docker pull freecats/dynapins-server:latest
 
 # Or specific version
-docker pull freecats/dynapins-server:v1.0.0
+docker pull freecats/dynapins-server:v0.0.1
 ```
 
 ### Build Your Own

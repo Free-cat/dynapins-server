@@ -240,7 +240,7 @@ But NOT:
 ## Available Tags
 
 - `latest` - Latest stable release
-- `v1.0.0`, `v1.0`, `v1` - Semantic version tags
+- `v0.0.1`, `v0.0` - Semantic version tags
 - `main` - Latest development build
 - `sha-<commit>` - Specific commit builds
 
