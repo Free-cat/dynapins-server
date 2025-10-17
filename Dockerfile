@@ -16,21 +16,32 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o server ./cmd/server
 
 # Final stage
-FROM alpine:latest
+FROM alpine:3.20
 
-RUN apk --no-cache add ca-certificates
+# Install CA certificates and curl for healthcheck
+RUN apk --no-cache add ca-certificates curl && \
+    adduser -D -u 65532 -g appuser appuser
 
-WORKDIR /root/
+# Set default PORT (can be overridden)
+ENV PORT=8080
+
+WORKDIR /app
 
 # Copy the binary from builder
 COPY --from=builder /app/server .
 
+# Change ownership to non-root user
+RUN chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER 65532:65532
+
 # Expose port
 EXPOSE 8080
 
-# Health check
+# Health check with PORT env variable support
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+  CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # Run the application
 CMD ["./server"]

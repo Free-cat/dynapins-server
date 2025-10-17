@@ -1,14 +1,21 @@
-# Dynapins Server Server
+# Dynapins Server
 
-A Go-based HTTP server that provides signed TLS certificate pins for dynamic SSL pinning. This server retrieves TLS certificates for whitelisted domains, generates SHA-256 hashes of their Subject Public Key Info (SPKI), and returns them in a signed response.
+[![CI](https://github.com/Free-cat/dynapins-server/actions/workflows/ci.yml/badge.svg)](https://github.com/Free-cat/dynapins-server/actions/workflows/ci.yml)
+[![Docker Pulls](https://img.shields.io/docker/pulls/freecats/dynapins-server)](https://hub.docker.com/r/freecats/dynapins-server)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Free-cat/dynapins-server)](https://goreportcard.com/report/github.com/Free-cat/dynapins-server)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+A Go-based HTTP server that provides signed TLS certificate pins for dynamic SSL pinning. This server retrieves TLS certificates for whitelisted domains, generates SHA-256 hashes of their Subject Public Key Info (SPKI), and returns them in a JWS (JSON Web Signature) signed response.
 
 ## Features
 
 - **Dynamic SSL Pinning**: Get certificate pins for domains without hardcoding them
-- **Signature-Verified Trust**: All responses are signed with Ed25519 for verification
+- **Signature-Verified Trust**: All responses are signed with ECDSA P-256 (ES256) for verification
+- **Certificate Caching**: Optional TTL-based caching to reduce TLS handshakes and improve performance
 - **Domain Whitelist**: Only serves pins for explicitly allowed domains (supports wildcards)
 - **Stateless**: No database required, fully stateless operation
 - **High Performance**: Built in Go with minimal dependencies
+- **Security Hardened**: Runs as non-root user, validates domains, configurable timeouts
 
 ## Prerequisites
 
@@ -27,14 +34,18 @@ The server is configured entirely via environment variables for maximum flexibil
 | `PORT` | The port the server listens on | No | `8080` | `8080`, `3000` |
 | `READ_TIMEOUT` | Maximum duration for reading the entire request | No | `10s` | `10s`, `30s`, `1m` |
 | `WRITE_TIMEOUT` | Maximum duration before timing out writes of the response | No | `10s` | `10s`, `30s` |
+| `READ_HEADER_TIMEOUT` | Maximum duration for reading request headers (Slowloris protection) | No | `5s` | `5s`, `10s` |
 | `IDLE_TIMEOUT` | Maximum time to wait for the next request when keep-alives are enabled | No | `60s` | `60s`, `2m` |
 | `SHUTDOWN_TIMEOUT` | Maximum time to wait for graceful server shutdown | No | `10s` | `10s`, `30s` |
+| `MAX_HEADER_BYTES` | Maximum size of request headers in bytes | No | `1048576` (1MB) | `1048576`, `524288` |
 | **Domain & Security** |
 | `ALLOWED_DOMAINS` | Comma-separated list of domains and wildcards to allow | **Yes** | - | `"example.com,*.example.com,api.anotherexample.com"` |
-| `SIGNATURE_LIFETIME` | The validity period of the generated signature | No | `1h` | `1h`, `30m`, `2h30m` |
-| `PRIVATE_KEY_PEM` | The PEM-encoded Ed25519 private key for signing | **Yes** | - | `"-----BEGIN PRIVATE KEY-----..."` |
-| **Certificate Retrieval** |
+| `SIGNATURE_LIFETIME` | The validity period of the generated JWS signature | No | `1h` | `1h`, `30m`, `2h30m` |
+| `PRIVATE_KEY_PEM` | The PEM-encoded ECDSA P-256 private key for signing | **Yes** | - | `"-----BEGIN PRIVATE KEY-----..."` |
+| `ALLOW_IP_LITERALS` | Allow IP addresses as domains (for development only) | No | `false` | `true`, `false` |
+| **Certificate Retrieval & Caching** |
 | `CERT_DIAL_TIMEOUT` | Maximum time to wait when connecting to retrieve certificates | No | `10s` | `10s`, `15s`, `30s` |
+| `CERT_CACHE_TTL` | Certificate cache TTL (0 to disable caching) | No | `5m` | `5m`, `10m`, `0` (disabled) |
 | **Logging** |
 | `LOG_LEVEL` | Logging level (debug, info, warn, error) | No | `info` | `info`, `debug`, `error` |
 
@@ -46,16 +57,19 @@ Duration values support Go's duration format:
 - `h` = hours (e.g., `2h`)
 - Combined: `1h30m`, `2h30m45s`
 
-### Generating an Ed25519 Key Pair
+### Generating an ECDSA P-256 Key Pair
 
-To generate a new Ed25519 key pair for signing:
+To generate a new ECDSA P-256 key pair for signing:
 
 ```bash
-# Generate private key
-openssl genpkey -algorithm Ed25519 -out private_key.pem
+# Generate private key (ECDSA P-256)
+openssl ecparam -genkey -name prime256v1 -noout -out private_key.pem
 
 # Extract public key
-openssl pkey -in private_key.pem -pubout -out public_key.pem
+openssl ec -in private_key.pem -pubout -out public_key.pem
+
+# Optional: Convert to PKCS#8 format
+openssl pkcs8 -topk8 -nocrypt -in private_key.pem -out private_key_pkcs8.pem
 ```
 
 ## Running the Server
@@ -191,28 +205,46 @@ Retrieve signed certificate pins for a domain.
 
 **Query Parameters:**
 - `domain` (required): The fully qualified domain name to get pins for
+- `include-backup-pins` (optional): Include backup pin from intermediate cert (`true` or `false`, default: `false`)
 
 **Example Request:**
 
 ```bash
+# Get primary pin only (leaf certificate)
 curl "http://localhost:8080/v1/pins?domain=example.com"
+
+# Include backup pin (leaf + intermediate)
+curl "http://localhost:8080/v1/pins?domain=example.com&include-backup-pins=true"
 ```
 
 **Example Response (200 OK):**
 
 ```json
 {
+  "jws": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImExYjJjM2Q0In0.eyJkb21haW4iOiJleGFtcGxlLmNvbSIsInBpbnMiOlsiYjdmM2U2YTFjMmQzZTRmNWE2YjdjOGQ5ZTBmMWEyYjNjNGQ1ZTZmN2E4YjljMGQxZTJmM2E0YjVjNmQ3ZThmOSJdLCJpYXQiOjE3Mjk1ODg4MDAsImV4cCI6MTcyOTU5MjQwMCwidHRsX3NlY29uZHMiOjM2MDB9.MEQCIG3..."
+}
+```
+
+**JWS Token Contents** (when decoded):
+
+Header:
+```json
+{
+  "alg": "ES256",
+  "kid": "a1b2c3d4"
+}
+```
+
+Payload:
+```json
+{
   "domain": "example.com",
   "pins": [
-    "b7f3e6a1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9",
-    "c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9"
+    "b7f3e6a1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9"
   ],
-  "created": "2025-10-17T08:00:00Z",
-  "expires": "2025-10-17T09:00:00Z",
-  "ttl_seconds": 3600,
-  "keyId": "a1b2c3d4",
-  "alg": "Ed25519",
-  "signature": "MEQCIG3..."
+  "iat": 1729588800,
+  "exp": 1729592400,
+  "ttl_seconds": 3600
 }
 ```
 
@@ -267,6 +299,27 @@ curl "http://localhost:8080/readiness"
   "reason": "crypto keys not initialized"
 }
 ```
+
+## Documentation
+
+### API Specification
+
+Full OpenAPI 3.0 specification: [api/openapi.yaml](api/openapi.yaml)
+
+Browse the interactive API docs:
+- [OpenAPI Viewer](https://redocly.github.io/redoc/?url=https://raw.githubusercontent.com/Free-cat/dynapins-server/main/api/openapi.yaml)
+
+### Deployment Examples
+
+Ready-to-use configurations:
+- **[Docker Compose](examples/docker-compose/)** - Simple setup for single-server deployments
+- **[Kubernetes](examples/kubernetes/)** - Production-ready K8s manifests with health checks
+
+### Additional Resources
+
+- **[CHANGELOG.md](CHANGELOG.md)** - Version history and release notes
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** - How to contribute to the project
+- **[SECURITY.md](SECURITY.md)** - Security policy and best practices
 
 ## Development
 
@@ -351,7 +404,7 @@ Pre-built multi-platform images: [freecats/dynapins-server](https://hub.docker.c
 docker pull freecats/dynapins-server:latest
 
 # Or specific version
-docker pull freecats/dynapins-server:v0.0.1
+docker pull freecats/dynapins-server:v0.2.0
 ```
 
 ### Build Your Own
@@ -383,13 +436,65 @@ pinning-server/
 └── README.md
 ```
 
+## Client Integration
+
+### Verifying JWS Signatures
+
+Clients **must** verify the JWS signature before trusting the pins. Here's how:
+
+#### iOS (Swift)
+
+```swift
+import CryptoKit
+
+// Your server's public key (extract with: openssl ec -in private_key.pem -pubout)
+let publicKeyPEM = """
+-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
+-----END PUBLIC KEY-----
+"""
+
+// Parse and verify JWS using CryptoKit or a library like JOSESwift
+// The dynapins-ios SDK handles this automatically
+```
+
+#### Android (Kotlin)
+
+```kotlin
+import java.security.KeyFactory
+import java.security.spec.X509EncodedKeySpec
+import java.util.Base64
+
+// Your server's public key
+val publicKeyPEM = """
+    -----BEGIN PUBLIC KEY-----
+    MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE...
+    -----END PUBLIC KEY-----
+""".trimIndent()
+
+// Parse and verify JWS
+// The dynapins-android SDK handles this automatically
+```
+
+### Caching Strategy
+
+- **Server-side caching**: Enabled by default (`CERT_CACHE_TTL=5m`)
+  - Reduces TLS handshake overhead
+  - Improves response time and reduces load
+  
+- **Client-side caching**: Based on signature expiry (`exp` claim in JWS)
+  - Clients should cache pins until signature expires
+  - Refresh pins before expiry to avoid gaps
+
 ## Security Considerations
 
-1. **Private Key Protection**: Keep your Ed25519 private key secure. Never commit it to version control.
+1. **Private Key Protection**: Keep your ECDSA P-256 private key secure. Never commit it to version control.
 2. **HTTPS Only**: This server should be deployed behind a reverse proxy with TLS termination.
 3. **Whitelist Management**: Only add trusted domains to the whitelist.
-4. **Signature Verification**: Clients must verify the signature using the public key before trusting pins.
+4. **Signature Verification**: Clients **must** verify the JWS signature using the public key before trusting pins.
 5. **Certificate Validation**: The server validates certificates during retrieval (no `InsecureSkipVerify`).
+6. **IP Literal Blocking**: By default, IP addresses are rejected (`ALLOW_IP_LITERALS=false` for production).
+7. **Non-root Execution**: Docker image runs as user 65532 (non-root) for security.
 
 ## 📄 License
 

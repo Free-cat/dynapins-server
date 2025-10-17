@@ -1,34 +1,54 @@
 package crypto
 
 import (
-	"crypto/ed25519"
-	"encoding/base64"
-	"encoding/json"
+	"crypto/ecdsa"
 	"fmt"
+	"time"
+
+	"github.com/lestrrat-go/jwx/v2/jwa"
+	"github.com/lestrrat-go/jwx/v2/jws"
+	"github.com/lestrrat-go/jwx/v2/jwt"
 )
 
-// SignPayload signs a payload with an Ed25519 private key
-func SignPayload(payload interface{}, privateKey ed25519.PrivateKey) (string, error) {
-	// Marshal the payload to JSON (canonical form for signing)
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal payload: %w", err)
+// CreateJWS creates a JWS token with the given parameters using ECDSA P-256 (ES256)
+func CreateJWS(privateKey *ecdsa.PrivateKey, keyID string, domain string, pins []string, ttl time.Duration) (string, error) {
+	// Create a new JWT token
+	token := jwt.New()
+
+	// Set required claims
+	if err := token.Set("domain", domain); err != nil {
+		return "", fmt.Errorf("failed to set domain claim: %w", err)
+	}
+	if err := token.Set("pins", pins); err != nil {
+		return "", fmt.Errorf("failed to set pins claim: %w", err)
 	}
 
-	// Sign the data
-	signature := ed25519.Sign(privateKey, data)
+	// Set standard JWT claims
+	now := time.Now().UTC()
+	if err := token.Set(jwt.IssuedAtKey, now.Unix()); err != nil {
+		return "", fmt.Errorf("failed to set iat claim: %w", err)
+	}
+	if err := token.Set(jwt.ExpirationKey, now.Add(ttl).Unix()); err != nil {
+		return "", fmt.Errorf("failed to set exp claim: %w", err)
+	}
+	if err := token.Set("ttl_seconds", int(ttl.Seconds())); err != nil {
+		return "", fmt.Errorf("failed to set ttl_seconds claim: %w", err)
+	}
 
-	// Return base64-encoded signature
-	return base64.StdEncoding.EncodeToString(signature), nil
-}
+	// Create JWS headers
+	headers := jws.NewHeaders()
+	if err := headers.Set(jws.AlgorithmKey, jwa.ES256); err != nil {
+		return "", fmt.Errorf("failed to set algorithm header: %w", err)
+	}
+	if err := headers.Set(jws.KeyIDKey, keyID); err != nil {
+		return "", fmt.Errorf("failed to set kid header: %w", err)
+	}
 
-// SignablePayload represents the data that will be signed
-type SignablePayload struct {
-	Domain     string   `json:"domain"`
-	Pins       []string `json:"pins"`
-	Created    string   `json:"created"`
-	Expires    string   `json:"expires"`
-	TTLSeconds int      `json:"ttl_seconds"`
-	KeyID      string   `json:"keyId"`
-	Alg        string   `json:"alg"`
+	// Sign the token with ES256 (ECDSA P-256 + SHA-256)
+	signed, err := jwt.Sign(token, jwt.WithKey(jwa.ES256, privateKey, jws.WithProtectedHeaders(headers)))
+	if err != nil {
+		return "", fmt.Errorf("failed to sign token: %w", err)
+	}
+
+	return string(signed), nil
 }

@@ -1,8 +1,10 @@
 package crypto
 
 import (
-	"crypto/ed25519"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
@@ -13,11 +15,12 @@ import (
 )
 
 func TestGenerateKeyID(t *testing.T) {
-	// Generate a test key pair
-	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	// Generate a test ECDSA P-256 key pair
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("Failed to generate key: %v", err)
 	}
+	publicKey := &privateKey.PublicKey
 
 	// Generate key ID
 	keyID := GenerateKeyID(publicKey)
@@ -34,32 +37,14 @@ func TestGenerateKeyID(t *testing.T) {
 	}
 
 	// Verify different keys produce different IDs
-	publicKey2, _, err := ed25519.GenerateKey(rand.Reader)
+	privateKey2, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("Failed to generate key: %v", err)
 	}
+	publicKey2 := &privateKey2.PublicKey
 	keyID3 := GenerateKeyID(publicKey2)
 	if keyID == keyID3 {
 		t.Error("Different keys should produce different key IDs")
-	}
-}
-
-func TestGenerateSPKIHash(t *testing.T) {
-	// Create a test certificate
-	cert := createTestCertificate(t)
-
-	// Generate hash
-	hash := GenerateSPKIHash(cert)
-
-	// Verify hash is a hex string
-	if len(hash) != 64 { // SHA-256 produces 32 bytes = 64 hex characters
-		t.Errorf("Expected hash length 64, got %d", len(hash))
-	}
-
-	// Verify it's deterministic
-	hash2 := GenerateSPKIHash(cert)
-	if hash != hash2 {
-		t.Error("Hash generation should be deterministic")
 	}
 }
 
@@ -77,96 +62,250 @@ func TestGenerateSPKIHashes(t *testing.T) {
 		t.Errorf("Expected 2 hashes, got %d", len(hashes))
 	}
 
-	// Verify each hash is valid
+	// Verify each hash is a valid base64 string
 	for i, hash := range hashes {
-		if len(hash) != 64 {
-			t.Errorf("Hash %d: expected length 64, got %d", i, len(hash))
+		// Decode to verify it's valid base64
+		_, err := base64.StdEncoding.DecodeString(hash)
+		if err != nil {
+			t.Errorf("Hash %d is not valid base64: %v", i, err)
+		}
+		// Base64-encoded SHA-256 hash should be 44 characters
+		if len(hash) != 44 {
+			t.Errorf("Hash %d: expected length 44, got %d", i, len(hash))
 		}
 	}
 }
 
-func TestSignPayload(t *testing.T) {
-	// Generate a test key pair
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("Failed to generate key: %v", err)
+func TestGenerateSPKIHashes_SingleCert(t *testing.T) {
+	cert := createTestCertificate(t)
+	certs := []*x509.Certificate{cert}
+
+	hashes := GenerateSPKIHashes(certs)
+
+	if len(hashes) != 1 {
+		t.Errorf("Expected 1 hash, got %d", len(hashes))
 	}
 
-	// Create a test payload
-	payload := SignablePayload{
-		Domain:     "example.com",
-		Pins:       []string{"abc123", "def456"},
-		Created:    "2025-10-17T08:00:00Z",
-		Expires:    "2025-10-17T09:00:00Z",
-		TTLSeconds: 3600,
-		KeyID:      "testkey1",
-		Alg:        "Ed25519",
-	}
-
-	// Sign the payload
-	signature, err := SignPayload(payload, privateKey)
-	if err != nil {
-		t.Fatalf("Failed to sign payload: %v", err)
-	}
-
-	// Verify signature is base64 encoded
-	signatureBytes, err := base64.StdEncoding.DecodeString(signature)
-	if err != nil {
-		t.Fatalf("Signature is not valid base64: %v", err)
-	}
-
-	// Verify signature with public key
-	payloadJSON, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatalf("Failed to marshal payload: %v", err)
-	}
-
-	valid := ed25519.Verify(publicKey, payloadJSON, signatureBytes)
-	if !valid {
-		t.Error("Signature verification failed")
+	// Verify hash is deterministic
+	hashes2 := GenerateSPKIHashes(certs)
+	if hashes[0] != hashes2[0] {
+		t.Error("SPKI hash generation should be deterministic")
 	}
 }
 
-func TestSignPayload_Deterministic(t *testing.T) {
-	// Generate a test key pair
-	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+func TestGenerateSPKIHashes_EmptyInput(t *testing.T) {
+	hashes := GenerateSPKIHashes([]*x509.Certificate{})
+
+	if len(hashes) != 0 {
+		t.Errorf("Expected 0 hashes for empty input, got %d", len(hashes))
+	}
+}
+
+func TestCreateJWS(t *testing.T) {
+	// Generate a test ECDSA P-256 key pair
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("Failed to generate key: %v", err)
+	}
+	publicKey := &privateKey.PublicKey
+
+	// Test parameters
+	keyID := GenerateKeyID(publicKey)
+	domain := "example.com"
+	pins := []string{"abc123", "def456"}
+	ttl := time.Hour
+
+	// Create JWS token
+	jwsToken, err := CreateJWS(privateKey, keyID, domain, pins, ttl)
+	if err != nil {
+		t.Fatalf("Failed to create JWS: %v", err)
+	}
+
+	// Verify token is not empty
+	if jwsToken == "" {
+		t.Fatal("JWS token is empty")
+	}
+
+	// Verify token is in compact serialization format (header.payload.signature)
+	parts := splitJWS(jwsToken)
+	if len(parts) != 3 {
+		t.Errorf("Expected 3 parts in JWS token, got %d", len(parts))
+	}
+
+	// Decode and verify header
+	headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		t.Fatalf("Failed to decode JWS header: %v", err)
+	}
+
+	var header map[string]interface{}
+	if err := json.Unmarshal(headerJSON, &header); err != nil {
+		t.Fatalf("Failed to parse JWS header: %v", err)
+	}
+
+	if header["alg"] != "ES256" {
+		t.Errorf("Expected alg 'ES256', got '%v'", header["alg"])
+	}
+	if header["kid"] != keyID {
+		t.Errorf("Expected kid '%s', got '%v'", keyID, header["kid"])
+	}
+
+	// Decode and verify payload
+	payloadJSON, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatalf("Failed to decode JWS payload: %v", err)
+	}
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(payloadJSON, &payload); err != nil {
+		t.Fatalf("Failed to parse JWS payload: %v", err)
+	}
+
+	if payload["domain"] != domain {
+		t.Errorf("Expected domain '%s', got '%v'", domain, payload["domain"])
+	}
+
+	// Verify pins array
+	pinsArray, ok := payload["pins"].([]interface{})
+	if !ok {
+		t.Fatal("Pins is not an array")
+	}
+	if len(pinsArray) != len(pins) {
+		t.Errorf("Expected %d pins, got %d", len(pins), len(pinsArray))
+	}
+
+	// Verify timestamps
+	if _, ok := payload["iat"]; !ok {
+		t.Error("Missing iat claim")
+	}
+	if _, ok := payload["exp"]; !ok {
+		t.Error("Missing exp claim")
+	}
+	if _, ok := payload["ttl_seconds"]; !ok {
+		t.Error("Missing ttl_seconds claim")
+	}
+}
+
+func TestCreateJWS_WithDifferentInputs(t *testing.T) {
+	// Generate a test ECDSA P-256 key pair
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("Failed to generate key: %v", err)
+	}
+	publicKey := &privateKey.PublicKey
+
+	keyID := GenerateKeyID(publicKey)
+	domain := "example.com"
+	pins := []string{"abc123"}
+	ttl := time.Hour
+
+	// Create JWS with first domain
+	jws1, err := CreateJWS(privateKey, keyID, domain, pins, ttl)
+	if err != nil {
+		t.Fatalf("Failed to create JWS: %v", err)
+	}
+
+	// Create JWS with different domain
+	jws2, err := CreateJWS(privateKey, keyID, "different.com", pins, ttl)
+	if err != nil {
+		t.Fatalf("Failed to create JWS: %v", err)
+	}
+
+	// JWS tokens should be different due to different domains
+	if jws1 == jws2 {
+		t.Error("JWS tokens with different domains should be different")
+	}
+}
+
+func TestCreateJWS_KidHeader(t *testing.T) {
+	// Generate a test ECDSA P-256 key pair
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("Failed to generate key: %v", err)
+	}
+	publicKey := &privateKey.PublicKey
+
+	// Test with specific key ID
+	expectedKeyID := GenerateKeyID(publicKey)
+	domain := "example.com"
+	pins := []string{"abc123"}
+	ttl := time.Hour
+
+	// Create JWS token
+	jwsToken, err := CreateJWS(privateKey, expectedKeyID, domain, pins, ttl)
+	if err != nil {
+		t.Fatalf("Failed to create JWS: %v", err)
+	}
+
+	// Split and decode header
+	parts := splitJWS(jwsToken)
+	if len(parts) != 3 {
+		t.Fatalf("Expected 3 parts in JWS token, got %d", len(parts))
+	}
+
+	headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		t.Fatalf("Failed to decode JWS header: %v", err)
+	}
+
+	var header map[string]interface{}
+	if err := json.Unmarshal(headerJSON, &header); err != nil {
+		t.Fatalf("Failed to parse JWS header: %v", err)
+	}
+
+	// Verify kid matches expected value
+	actualKid, ok := header["kid"].(string)
+	if !ok {
+		t.Fatal("kid header is missing or not a string")
+	}
+
+	if actualKid != expectedKeyID {
+		t.Errorf("Expected kid '%s', got '%s'", expectedKeyID, actualKid)
+	}
+}
+
+func TestGetPublicKeyFromPrivate(t *testing.T) {
+	// Generate a test ECDSA P-256 key pair
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("Failed to generate key: %v", err)
 	}
 
-	payload := SignablePayload{
-		Domain:     "example.com",
-		Pins:       []string{"abc123"},
-		Created:    "2025-10-17T08:00:00Z",
-		Expires:    "2025-10-17T09:00:00Z",
-		TTLSeconds: 3600,
-		KeyID:      "testkey1",
-		Alg:        "Ed25519",
+	publicKey := GetPublicKeyFromPrivate(privateKey)
+
+	// Verify public key is not nil
+	if publicKey == nil {
+		t.Fatal("Public key is nil")
 	}
 
-	// Sign twice
-	sig1, err := SignPayload(payload, privateKey)
-	if err != nil {
-		t.Fatalf("Failed to sign payload: %v", err)
+	// Verify public key matches the one from private key
+	if publicKey != &privateKey.PublicKey {
+		t.Error("Public key doesn't match private key's public key")
 	}
+}
 
-	sig2, err := SignPayload(payload, privateKey)
-	if err != nil {
-		t.Fatalf("Failed to sign payload: %v", err)
+// Helper function to split JWS compact serialization
+func splitJWS(jws string) []string {
+	parts := make([]string, 0, 3)
+	start := 0
+	for i := 0; i < len(jws); i++ {
+		if jws[i] == '.' {
+			parts = append(parts, jws[start:i])
+			start = i + 1
+		}
 	}
-
-	// Ed25519 signatures are deterministic with the same key and payload
-	if sig1 != sig2 {
-		t.Error("Signatures should be deterministic")
+	if start < len(jws) {
+		parts = append(parts, jws[start:])
 	}
+	return parts
 }
 
 // Helper function to create a test certificate
 func createTestCertificate(t *testing.T) *x509.Certificate {
 	t.Helper()
 
-	// Generate a key pair for the certificate
-	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	// Generate RSA key pair for the certificate
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("Failed to generate key: %v", err)
 	}
@@ -176,6 +315,7 @@ func createTestCertificate(t *testing.T) *x509.Certificate {
 		SerialNumber: big.NewInt(1),
 		Subject: pkix.Name{
 			Organization: []string{"Test Org"},
+			CommonName:   "test.example.com",
 		},
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
@@ -185,7 +325,7 @@ func createTestCertificate(t *testing.T) *x509.Certificate {
 	}
 
 	// Create self-signed certificate
-	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, publicKey, privateKey)
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
 	if err != nil {
 		t.Fatalf("Failed to create certificate: %v", err)
 	}

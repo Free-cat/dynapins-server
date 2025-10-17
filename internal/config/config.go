@@ -1,7 +1,7 @@
 package config
 
 import (
-	"crypto/ed25519"
+	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -15,20 +15,24 @@ import (
 // Config holds the application configuration
 type Config struct {
 	// Server configuration
-	Port            int
-	ReadTimeout     time.Duration
-	WriteTimeout    time.Duration
-	IdleTimeout     time.Duration
-	ShutdownTimeout time.Duration
+	Port              int
+	ReadTimeout       time.Duration
+	WriteTimeout      time.Duration
+	IdleTimeout       time.Duration
+	ShutdownTimeout   time.Duration
+	ReadHeaderTimeout time.Duration
+	MaxHeaderBytes    int
 
 	// Domain and security configuration
 	AllowedDomains    []string
 	SignatureLifetime time.Duration
-	PrivateKey        ed25519.PrivateKey
-	PublicKey         ed25519.PublicKey
+	PrivateKey        *ecdsa.PrivateKey
+	PublicKey         *ecdsa.PublicKey
+	AllowIPLiterals   bool
 
 	// Certificate retrieval configuration
 	CertDialTimeout time.Duration
+	CertCacheTTL    time.Duration
 
 	// Logging configuration
 	LogLevel string
@@ -65,6 +69,16 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("invalid SHUTDOWN_TIMEOUT: %w", err)
 	}
 
+	cfg.ReadHeaderTimeout, err = getEnvDuration("READ_HEADER_TIMEOUT", 5*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("invalid READ_HEADER_TIMEOUT: %w", err)
+	}
+
+	cfg.MaxHeaderBytes, err = getEnvInt("MAX_HEADER_BYTES", 1<<20) // 1MB default
+	if err != nil {
+		return nil, fmt.Errorf("invalid MAX_HEADER_BYTES: %w", err)
+	}
+
 	// Domain and security configuration
 	allowedDomainsStr := os.Getenv("ALLOWED_DOMAINS")
 	if allowedDomainsStr == "" {
@@ -90,12 +104,19 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("failed to parse PRIVATE_KEY_PEM: %w", err)
 	}
 	cfg.PrivateKey = privateKey
-	cfg.PublicKey = privateKey.Public().(ed25519.PublicKey)
+	cfg.PublicKey = &privateKey.PublicKey
+
+	cfg.AllowIPLiterals = getEnvBool("ALLOW_IP_LITERALS", false)
 
 	// Certificate retrieval configuration
 	cfg.CertDialTimeout, err = getEnvDuration("CERT_DIAL_TIMEOUT", 10*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("invalid CERT_DIAL_TIMEOUT: %w", err)
+	}
+
+	cfg.CertCacheTTL, err = getEnvDuration("CERT_CACHE_TTL", 5*time.Minute)
+	if err != nil {
+		return nil, fmt.Errorf("invalid CERT_CACHE_TTL: %w", err)
 	}
 
 	// Logging configuration
@@ -139,26 +160,45 @@ func getEnvDuration(key string, defaultValue time.Duration) (time.Duration, erro
 	return value, nil
 }
 
-// parsePrivateKey parses an Ed25519 private key from PEM format
-func parsePrivateKey(pemData string) (ed25519.PrivateKey, error) {
+// getEnvBool retrieves a boolean environment variable with a default value
+func getEnvBool(key string, defaultValue bool) bool {
+	valueStr := os.Getenv(key)
+	if valueStr == "" {
+		return defaultValue
+	}
+	// Accept: true/false, 1/0, yes/no, on/off (case insensitive)
+	valueStr = strings.ToLower(strings.TrimSpace(valueStr))
+	switch valueStr {
+	case "true", "1", "yes", "on":
+		return true
+	case "false", "0", "no", "off":
+		return false
+	default:
+		return defaultValue
+	}
+}
+
+// parsePrivateKey parses an ECDSA P-256 private key from PEM format
+func parsePrivateKey(pemData string) (*ecdsa.PrivateKey, error) {
 	block, _ := pem.Decode([]byte(pemData))
 	if block == nil {
 		return nil, errors.New("failed to decode PEM block")
 	}
 
-	// Try parsing as PKCS8
+	// Try parsing as PKCS8 (preferred format)
 	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err == nil {
-		if ed25519Key, ok := key.(ed25519.PrivateKey); ok {
-			return ed25519Key, nil
+		if ecdsaKey, ok := key.(*ecdsa.PrivateKey); ok {
+			return ecdsaKey, nil
 		}
-		return nil, errors.New("private key is not Ed25519")
+		return nil, errors.New("private key is not ECDSA")
 	}
 
-	// If PKCS8 fails, try as raw Ed25519 (some tools export this way)
-	if len(block.Bytes) == ed25519.PrivateKeySize {
-		return ed25519.PrivateKey(block.Bytes), nil
+	// Try parsing as SEC1 EC private key
+	ecKey, err := x509.ParseECPrivateKey(block.Bytes)
+	if err == nil {
+		return ecKey, nil
 	}
 
-	return nil, fmt.Errorf("unsupported private key format: %w", err)
+	return nil, fmt.Errorf("unsupported private key format (expected ECDSA P-256): %w", err)
 }

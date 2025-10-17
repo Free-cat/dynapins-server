@@ -1,0 +1,336 @@
+openapi: 3.0.3
+info:
+  title: Dynapins Server API
+  description: |
+    Dynamic SSL Pinning API that provides signed TLS certificate pins for mobile applications.
+    
+    The API retrieves TLS certificates for whitelisted domains, generates SHA-256 hashes of their 
+    Subject Public Key Info (SPKI), and returns them in a JWS (JSON Web Signature) signed response.
+    
+    ## Features
+    - **Signature-Verified Trust**: All responses signed with ECDSA P-256 (ES256)
+    - **Domain Whitelist**: Only serves pins for explicitly allowed domains
+    - **Certificate Caching**: Optional TTL-based caching for performance
+    - **Stateless Operation**: No database required
+    
+    ## Authentication
+    No authentication required for public endpoints. The integrity of responses is ensured through
+    JWS signatures that clients must verify using the server's public key.
+    
+    ## Rate Limiting
+    Rate limiting should be implemented at the infrastructure level (reverse proxy, API gateway).
+  version: 0.2.0
+  contact:
+    name: Dynapins Team
+    url: https://github.com/Free-cat/dynapins-server
+  license:
+    name: MIT
+    url: https://github.com/Free-cat/dynapins-server/blob/main/LICENSE
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://api.example.com
+    description: Production server
+
+tags:
+  - name: pins
+    description: Certificate pinning operations
+  - name: health
+    description: Health check endpoints
+
+paths:
+  /v1/pins:
+    get:
+      tags:
+        - pins
+      summary: Get certificate pins for a domain
+      description: |
+        Retrieves TLS certificate pins for the specified domain. Returns a JWS-signed response
+        containing base64-encoded SHA-256 hashes of certificate Subject Public Key Info (SPKI).
+        
+        The domain must be in the server's whitelist. Optionally includes backup pins from
+        intermediate certificates for certificate rotation scenarios.
+      operationId: getCertificatePins
+      parameters:
+        - name: domain
+          in: query
+          required: true
+          description: Fully qualified domain name to retrieve certificate pins for
+          schema:
+            type: string
+            format: hostname
+            example: example.com
+          examples:
+            basic:
+              value: example.com
+              summary: Basic domain
+            subdomain:
+              value: api.example.com
+              summary: Subdomain
+        - name: include-backup-pins
+          in: query
+          required: false
+          description: Include backup pin from intermediate certificate
+          schema:
+            type: boolean
+            default: false
+          examples:
+            without_backup:
+              value: false
+              summary: Primary pin only (default)
+            with_backup:
+              value: true
+              summary: Include backup pin
+      responses:
+        '200':
+          description: Successfully retrieved certificate pins
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PinsResponse'
+              examples:
+                primary_only:
+                  summary: Primary pin only
+                  value:
+                    jws: "eyJhbGciOiJFUzI1NiIsImtpZCI6ImExYjJjM2Q0In0.eyJkb21haW4iOiJleGFtcGxlLmNvbSIsInBpbnMiOlsiYjdmM2U2YTFjMmQzZTRmNWE2YjdjOGQ5ZTBmMWEyYjNjNGQ1ZTZmN2E4YjljMGQxZTJmM2E0YjVjNmQ3ZThmOSJdLCJpYXQiOjE3Mjk1ODg4MDAsImV4cCI6MTcyOTU5MjQwMCwidHRsX3NlY29uZHMiOjM2MDB9.MEQCIG3..."
+                with_backup:
+                  summary: With backup pin
+                  value:
+                    jws: "eyJhbGciOiJFUzI1NiIsImtpZCI6ImExYjJjM2Q0In0.eyJkb21haW4iOiJleGFtcGxlLmNvbSIsInBpbnMiOlsiYjdmM2U2YTFjMmQzZTRmNWE2YjdjOGQ5ZTBmMWEyYjNjNGQ1ZTZmN2E4YjljMGQxZTJmM2E0YjVjNmQ3ZThmOSIsImM4ZDRlNWY2YTdiOGM5ZDBkMWUyZjNhNGI1YzZkN2U4ZjlhMGIxYzJkM2U0ZjVhNmI3Il0sImlhdCI6MTcyOTU4ODgwMCwiZXhwIjoxNzI5NTkyNDAwLCJ0dGxfc2Vjb25kcyI6MzYwMH0.MEQCIG3..."
+        '400':
+          description: Bad request - missing or invalid domain parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                missing_domain:
+                  summary: Missing domain parameter
+                  value:
+                    error: "Missing required query parameter: domain"
+                    code: 400
+                invalid_domain:
+                  summary: Invalid domain format
+                  value:
+                    error: "Invalid domain parameter"
+                    code: 400
+        '403':
+          description: Forbidden - domain not in whitelist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Domain not found in whitelist"
+                code: 403
+        '405':
+          description: Method not allowed - only GET is supported
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Method not allowed"
+                code: 405
+        '422':
+          description: Unprocessable entity - failed to retrieve certificate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Failed to retrieve certificate for domain"
+                code: 422
+        '500':
+          description: Internal server error - failed to generate JWS token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "Failed to generate signed token"
+                code: 500
+
+  /health:
+    get:
+      tags:
+        - health
+      summary: Liveness check
+      description: |
+        Basic liveness probe for Kubernetes/Docker health monitoring.
+        Returns 200 OK if the server is running.
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: healthy
+        '405':
+          description: Method not allowed - only GET is supported
+
+  /readiness:
+    get:
+      tags:
+        - health
+      summary: Readiness check
+      description: |
+        Readiness probe that verifies crypto components are initialized.
+        Returns 200 OK if the server is ready to serve requests.
+      operationId: readinessCheck
+      responses:
+        '200':
+          description: Server is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+              example:
+                status: ready
+                allowed_domains: 3
+                key_id: a1b2c3d4
+        '405':
+          description: Method not allowed - only GET is supported
+        '503':
+          description: Service unavailable - crypto keys not initialized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessErrorResponse'
+              example:
+                status: not ready
+                reason: "crypto keys not initialized"
+
+components:
+  schemas:
+    PinsResponse:
+      type: object
+      required:
+        - jws
+      properties:
+        jws:
+          type: string
+          description: |
+            JWS (JSON Web Signature) token containing certificate pins.
+            The token is signed with ECDSA P-256 (ES256) and includes:
+            - Header: Algorithm (ES256) and Key ID
+            - Payload: Domain, pins array, issued at (iat), expiration (exp), TTL
+            - Signature: ECDSA signature
+          example: "eyJhbGciOiJFUzI1NiIsImtpZCI6ImExYjJjM2Q0In0.eyJkb21haW4iOiJleGFtcGxlLmNvbSIsInBpbnMiOlsiYjdmM2U2YTFjMmQzZTRmNWE2YjdjOGQ5ZTBmMWEyYjNjNGQ1ZTZmN2E4YjljMGQxZTJmM2E0YjVjNmQ3ZThmOSJdLCJpYXQiOjE3Mjk1ODg4MDAsImV4cCI6MTcyOTU5MjQwMCwidHRsX3NlY29uZHMiOjM2MDB9.MEQCIG3..."
+
+    JWSPayload:
+      type: object
+      description: |
+        Decoded JWS payload structure (for reference only - clients receive encoded JWS)
+      required:
+        - domain
+        - pins
+        - iat
+        - exp
+        - ttl_seconds
+      properties:
+        domain:
+          type: string
+          description: The domain for which pins were generated
+          example: example.com
+        pins:
+          type: array
+          description: |
+            Array of base64-encoded SHA-256 hashes of certificate SPKI.
+            - First pin: Leaf certificate
+            - Second pin (if included): Intermediate certificate (backup)
+          items:
+            type: string
+            format: base64
+          example:
+            - "b7f3e6a1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9"
+            - "c8d4e5f6a7b8c9d0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7"
+        iat:
+          type: integer
+          description: Issued at timestamp (Unix epoch seconds)
+          example: 1729588800
+        exp:
+          type: integer
+          description: Expiration timestamp (Unix epoch seconds)
+          example: 1729592400
+        ttl_seconds:
+          type: integer
+          description: Time-to-live in seconds
+          example: 3600
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - code
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: "Domain not found in whitelist"
+        code:
+          type: integer
+          description: HTTP status code
+          example: 403
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - healthy
+          description: Health status of the server
+          example: healthy
+
+    ReadinessResponse:
+      type: object
+      required:
+        - status
+        - allowed_domains
+        - key_id
+      properties:
+        status:
+          type: string
+          enum:
+            - ready
+          description: Readiness status of the server
+          example: ready
+        allowed_domains:
+          type: integer
+          description: Number of domains in the whitelist
+          example: 3
+        key_id:
+          type: string
+          description: Public key identifier (first 8 chars of SHA-256 hash)
+          example: a1b2c3d4
+
+    ReadinessErrorResponse:
+      type: object
+      required:
+        - status
+        - reason
+      properties:
+        status:
+          type: string
+          enum:
+            - not ready
+          description: Readiness status
+          example: not ready
+        reason:
+          type: string
+          description: Reason why the server is not ready
+          example: "crypto keys not initialized"
+
+  securitySchemes: {}
+
+externalDocs:
+  description: Full documentation on GitHub
+  url: https://github.com/Free-cat/dynapins-server
+

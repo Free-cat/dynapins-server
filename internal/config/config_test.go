@@ -1,7 +1,8 @@
 package config
 
 import (
-	"crypto/ed25519"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
@@ -11,8 +12,8 @@ import (
 )
 
 func TestLoad_Success(t *testing.T) {
-	// Generate a test Ed25519 key pair
-	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	// Generate a test ECDSA P-256 key pair
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("Failed to generate key: %v", err)
 	}
@@ -136,8 +137,8 @@ func TestLoad_InvalidPort(t *testing.T) {
 }
 
 func TestLoad_Defaults(t *testing.T) {
-	// Generate a test Ed25519 key pair
-	_, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	// Generate a test ECDSA P-256 key pair
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatalf("Failed to generate key: %v", err)
 	}

@@ -1,0 +1,21 @@
+# Environment variables template for Docker Compose
+# Copy this file to .env and fill in your values
+# cp env-template.txt .env
+
+# Required: Comma-separated list of allowed domains
+ALLOWED_DOMAINS=example.com,*.example.com,api.example.org
+
+# Required: Your ECDSA P-256 private key (PEM format)
+# Generate with: openssl ecparam -genkey -name prime256v1 -noout -out private_key.pem
+PRIVATE_KEY_PEM=-----BEGIN PRIVATE KEY-----
+YOUR_PRIVATE_KEY_HERE
+-----END PRIVATE KEY-----
+
+# Optional: Override default settings
+# PORT=8080
+# SIGNATURE_LIFETIME=1h
+# LOG_LEVEL=info
+# CERT_CACHE_TTL=5m
+# ALLOW_IP_LITERALS=false
+
+

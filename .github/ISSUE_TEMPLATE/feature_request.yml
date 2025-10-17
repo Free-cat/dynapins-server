@@ -1,17 +1,24 @@
 name: ✨ Feature Request
-description: Suggest a new feature or enhancement
+description: Suggest an idea or enhancement for this project
 title: "[Feature]: "
-labels: ["enhancement"]
+labels: ["enhancement", "triage"]
+assignees: []
+
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for suggesting a feature! Please provide as much detail as possible.
+        Thanks for suggesting a feature! 🚀
+        
+        Before submitting, please:
+        - Search existing issues to avoid duplicates
+        - Check if this aligns with the project's goals
+        - Be as detailed as possible
 
   - type: textarea
     id: problem
     attributes:
-      label: Problem Description
+      label: Problem Statement
       description: Is your feature request related to a problem? Please describe.
       placeholder: I'm frustrated when...
     validations:
@@ -31,18 +38,24 @@ body:
     attributes:
       label: Alternatives Considered
       description: Describe alternatives you've considered
-      placeholder: I've also thought about...
+      placeholder: I also thought about...
+    validations:
+      required: false
 
-  - type: textarea
-    id: use-case
+  - type: dropdown
+    id: category
     attributes:
-      label: Use Case
-      description: How would this feature be used?
-      placeholder: |
-        This would allow users to...
-        Example scenario:
-        1. User does X
-        2. System responds with Y
+      label: Feature Category
+      description: What type of feature is this?
+      options:
+        - API Enhancement
+        - Performance Improvement
+        - Security Enhancement
+        - Documentation
+        - Developer Experience
+        - Monitoring/Observability
+        - Configuration
+        - Other
     validations:
       required: true
 
@@ -52,26 +65,63 @@ body:
       label: Priority
       description: How important is this feature to you?
       options:
-        - Low - Nice to have
-        - Medium - Would improve workflow
-        - High - Blocking my use case
+        - Critical - Blocking my use case
+        - High - Would significantly improve my workflow
+        - Medium - Nice to have
+        - Low - Minor improvement
     validations:
       required: true
 
-  - type: checkboxes
-    id: contribution
+  - type: textarea
+    id: use-case
     attributes:
-      label: Contribution
-      description: Would you be willing to contribute this feature?
-      options:
-        - label: I'm willing to submit a PR for this feature
-        - label: I can help with testing
-        - label: I can help with documentation
+      label: Use Case
+      description: Describe your use case and how this feature would help
+      placeholder: |
+        In my application, I need to...
+        This feature would help by...
+    validations:
+      required: true
+
+  - type: textarea
+    id: example
+    attributes:
+      label: Example Implementation
+      description: If you have ideas on how to implement this, share them here
+      placeholder: |
+        ```go
+        // Example code or configuration
+        ```
+    validations:
+      required: false
+
+  - type: textarea
+    id: breaking
+    attributes:
+      label: Breaking Changes
+      description: Would this require any breaking changes to the API?
+      placeholder: Yes/No, and explain why
+    validations:
+      required: false
 
   - type: textarea
     id: additional
     attributes:
       label: Additional Context
       description: Add any other context, screenshots, or examples
-      placeholder: Any additional information
+      placeholder: Screenshots, diagrams, links to similar implementations
+    validations:
+      required: false
 
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      description: Please confirm the following
+      options:
+        - label: I have searched existing issues for duplicates
+          required: true
+        - label: This feature aligns with the project's goals
+          required: true
+        - label: I am willing to help implement this feature (if able)
+          required: false

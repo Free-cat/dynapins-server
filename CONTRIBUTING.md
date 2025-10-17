@@ -147,14 +147,46 @@ Ensure all tests pass before submitting:
 # Run all tests
 make test
 
+# Run tests with race detector (recommended)
+go test -race ./...
+
 # Run tests with coverage
 make test-coverage
+# Or manually:
+go test -cover -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out -o coverage.html
 
-# Run specific tests
+# Run specific package tests
 go test ./internal/domain -v
+go test ./internal/server -v
+
+# Run specific test
+go test ./internal/server -run TestHandleGetPins_Success -v
 
 # Run linters
 make lint
+
+# Run staticcheck
+staticcheck ./...
+
+# Run vulnerability check
+govulncheck ./...
+```
+
+### Running Benchmarks
+
+```bash
+# Run all benchmarks
+make bench
+
+# Run specific benchmarks
+go test -bench=. -benchmem ./internal/crypto/
+go test -bench=. -benchmem ./internal/domain/
+
+# Compare benchmark results
+make bench-baseline  # Save baseline
+# Make your changes
+make bench-compare   # Compare with baseline
 ```
 
 ## 📤 Submitting Changes

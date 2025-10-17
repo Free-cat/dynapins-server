@@ -13,17 +13,23 @@ import (
 type Server struct {
 	config    *config.Config
 	validator *domain.Validator
-	retriever *cert.Retriever
+	retriever cert.CertRetriever
 	keyID     string
 	mux       *http.ServeMux
 }
 
 // New creates a new HTTP server
 func New(cfg *config.Config) *Server {
+	return NewWithRetriever(cfg, cert.NewRetriever(cfg.CertDialTimeout, cfg.CertCacheTTL))
+}
+
+// NewWithRetriever creates a new HTTP server with a custom certificate retriever
+// This is useful for testing with fake retrievers
+func NewWithRetriever(cfg *config.Config, retriever cert.CertRetriever) *Server {
 	s := &Server{
 		config:    cfg,
-		validator: domain.NewValidator(cfg.AllowedDomains),
-		retriever: cert.NewRetriever(cfg.CertDialTimeout),
+		validator: domain.NewValidatorWithOptions(cfg.AllowedDomains, cfg.AllowIPLiterals),
+		retriever: retriever,
 		keyID:     crypto.GenerateKeyID(cfg.PublicKey),
 		mux:       http.NewServeMux(),
 	}

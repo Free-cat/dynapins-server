@@ -13,6 +13,19 @@ bin/
 coverage.txt
 coverage.html
 
+# Benchmark and profiling results
+*.bench
+*.prof
+cpu.prof
+mem.prof
+bench_*.txt
+
+# Performance test results
+performance/results/*.txt
+performance/results/*.json
+performance/results/*.html
+performance/results/*.bin
+
 # Dependency directories
 vendor/
 
@@ -28,6 +41,13 @@ public_key.*
 # Environment files
 .env
 .env.local
+.env.production
+.env.*.local
+
+# Example environment files (keep templates only)
+examples/**/.env
+examples/**/private_key.pem
+examples/**/*.key
 
 # IDE
 .vscode/
@@ -40,6 +60,20 @@ public_key.*
 .DS_Store
 Thumbs.db
 
+# Docker
+.dockerignore.local
+docker-compose.override.yml
+
+# Kubernetes temporary files
+kustomization.yaml.bak
+*.kubeconfig
+
+# Temporary and local files
+tmp/
+temp/
+*.tmp
+*.bak
+*.backup
 
 # Maintainer scripts (private monorepo only)
 .maintainer/

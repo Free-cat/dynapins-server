@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/x509"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -12,9 +13,16 @@ import (
 
 // handleGetPins handles GET /v1/pins?domain=example.com
 func (s *Server) handleGetPins(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+
 	// Only allow GET requests
 	if r.Method != http.MethodGet {
 		writeError(w, "Method not allowed", http.StatusMethodNotAllowed)
+		logger.Info("Request completed",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", http.StatusMethodNotAllowed,
+			"duration_ms", time.Since(start).Milliseconds())
 		return
 	}
 
@@ -22,8 +30,24 @@ func (s *Server) handleGetPins(w http.ResponseWriter, r *http.Request) {
 	domain := r.URL.Query().Get("domain")
 	if domain == "" {
 		writeError(w, "Missing required query parameter: domain", http.StatusBadRequest)
+		logger.Info("Request completed",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", http.StatusBadRequest,
+			"error", "missing_domain",
+			"duration_ms", time.Since(start).Milliseconds())
 		return
 	}
+
+	// Validate domain format (basic validation for malformed domains)
+	if len(domain) == 0 || len(domain) > 253 {
+		writeError(w, "Invalid domain parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Check if backup pins should be included
+	includeBackupStr := r.URL.Query().Get("include-backup-pins")
+	includeBackup := includeBackupStr == "true"
 
 	logger.Info("Processing pins request", "domain", domain, "remote_addr", r.RemoteAddr)
 
@@ -31,6 +55,13 @@ func (s *Server) handleGetPins(w http.ResponseWriter, r *http.Request) {
 	if !s.validator.IsAllowed(domain) {
 		logger.Warn("Domain not in whitelist", "domain", domain)
 		writeError(w, "Domain not found in whitelist", http.StatusForbidden)
+		logger.Info("Request completed",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"domain", domain,
+			"status", http.StatusForbidden,
+			"error", "domain_not_allowed",
+			"duration_ms", time.Since(start).Milliseconds())
 		return
 	}
 
@@ -39,58 +70,70 @@ func (s *Server) handleGetPins(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		logger.Error("Failed to retrieve certificates", "domain", domain, "error", err)
 		writeError(w, "Failed to retrieve certificate for domain", http.StatusUnprocessableEntity)
+		logger.Info("Request completed",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"domain", domain,
+			"status", http.StatusUnprocessableEntity,
+			"error", "cert_retrieval_failed",
+			"duration_ms", time.Since(start).Milliseconds())
 		return
 	}
 
-	// Generate SPKI hashes
-	pins := crypto.GenerateSPKIHashes(certs)
-
-	// Generate timestamps
-	now := time.Now().UTC()
-	expires := now.Add(s.config.SignatureLifetime)
-
-	// Create signable payload
-	signablePayload := crypto.SignablePayload{
-		Domain:     domain,
-		Pins:       pins,
-		Created:    now.Format(time.RFC3339),
-		Expires:    expires.Format(time.RFC3339),
-		TTLSeconds: int(s.config.SignatureLifetime.Seconds()),
-		KeyID:      s.keyID,
-		Alg:        "Ed25519",
+	// Determine which certificates to use for pin generation
+	var certsForPinning []*x509.Certificate
+	if includeBackup && len(certs) > 1 {
+		// Use leaf and intermediate certificate
+		certsForPinning = certs[:2]
+	} else if len(certs) > 0 {
+		// Use only leaf certificate
+		certsForPinning = certs[:1]
 	}
 
-	// Sign the payload
-	signature, err := crypto.SignPayload(signablePayload, s.config.PrivateKey)
+	// Generate SPKI hashes in TrustKit format: base64(SHA256(SPKI))
+	pins := crypto.GenerateSPKIHashes(certsForPinning)
+
+	// Create JWS token
+	jwsToken, err := crypto.CreateJWS(
+		s.config.PrivateKey,
+		s.keyID,
+		domain,
+		pins,
+		s.config.SignatureLifetime,
+	)
 	if err != nil {
-		logger.Error("Failed to sign payload", "domain", domain, "error", err)
-		writeError(w, "Failed to generate signature", http.StatusInternalServerError)
+		logger.Error("Failed to create JWS token", "domain", domain, "error", err)
+		writeError(w, "Failed to generate signed token", http.StatusInternalServerError)
+		logger.Info("Request completed",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"domain", domain,
+			"status", http.StatusInternalServerError,
+			"error", "jws_creation_failed",
+			"duration_ms", time.Since(start).Milliseconds())
 		return
 	}
 
-	// Create response envelope
-	envelope := models.PinEnvelope{
-		Domain:     signablePayload.Domain,
-		Pins:       signablePayload.Pins,
-		Created:    signablePayload.Created,
-		Expires:    signablePayload.Expires,
-		TTLSeconds: signablePayload.TTLSeconds,
-		KeyID:      signablePayload.KeyID,
-		Alg:        signablePayload.Alg,
-		Signature:  signature,
+	// Create JWS response
+	response := map[string]string{
+		"jws": jwsToken,
 	}
 
 	// Write response
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(envelope); err != nil {
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		logger.Error("Failed to encode response", "error", err)
 	}
 
-	logger.Info("Successfully processed pins request",
+	logger.Info("Request completed",
+		"method", r.Method,
+		"path", r.URL.Path,
 		"domain", domain,
+		"status", http.StatusOK,
 		"pin_count", len(pins),
-		"expires", expires.Format(time.RFC3339))
+		"include_backup", includeBackup,
+		"duration_ms", time.Since(start).Milliseconds())
 }
 
 // handleHealth handles GET /health - basic liveness check
@@ -128,9 +171,9 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":         "ready",
+		"status":          "ready",
 		"allowed_domains": len(s.config.AllowedDomains),
-		"key_id":         s.keyID,
+		"key_id":          s.keyID,
 	})
 }
 

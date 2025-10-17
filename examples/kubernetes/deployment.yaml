@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dynapins-server
+  namespace: default
+  labels:
+    app: dynapins-server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dynapins-server
+  template:
+    metadata:
+      labels:
+        app: dynapins-server
+    spec:
+      containers:
+      - name: server
+        image: freecats/dynapins-server:latest
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: ALLOWED_DOMAINS
+          value: "example.com,*.example.com,api.example.org"
+        - name: SIGNATURE_LIFETIME
+          value: "1h"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: CERT_CACHE_TTL
+          value: "5m"
+        - name: ALLOW_IP_LITERALS
+          value: "false"
+        - name: PRIVATE_KEY_PEM
+          valueFrom:
+            secretKeyRef:
+              name: dynapins-key
+              key: private_key.pem
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /readiness
+            port: 8080
+          initialDelaySeconds: 3
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+
+

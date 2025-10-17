@@ -1,0 +1,66 @@
+version: '3.8'
+
+# Docker Compose setup for performance testing
+# This creates an isolated environment for consistent performance testing
+
+services:
+  # The dynapins server under test
+  dynapins-server:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: dynapins-server-perf
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - ALLOWED_DOMAINS=google.com,*.google.com,github.com,*.github.com,cloudflare.com,*.cloudflare.com
+      - SIGNATURE_LIFETIME=1h
+      - READ_TIMEOUT=10s
+      - WRITE_TIMEOUT=10s
+      - IDLE_TIMEOUT=60s
+      - CERT_DIAL_TIMEOUT=10s
+      - SHUTDOWN_TIMEOUT=10s
+      - LOG_LEVEL=warn
+      - PRIVATE_KEY_PEM=${PRIVATE_KEY_PEM}
+    networks:
+      - perf-network
+    restart: unless-stopped
+    # Resource limits for consistent testing
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 512M
+        reservations:
+          cpus: '1'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # Load testing container with tools pre-installed
+  load-tester:
+    image: golang:1.23-alpine
+    container_name: load-tester
+    depends_on:
+      dynapins-server:
+        condition: service_healthy
+    networks:
+      - perf-network
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+      - ./results:/workspace/results
+    command: sleep infinity
+    environment:
+      - SERVER_URL=http://dynapins-server:8080
+      - TEST_DOMAIN=google.com
+
+networks:
+  perf-network:
+    driver: bridge
+

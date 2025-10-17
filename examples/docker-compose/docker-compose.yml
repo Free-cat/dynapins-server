@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  dynapins-server:
+    image: freecats/dynapins-server:latest
+    container_name: dynapins-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      ALLOWED_DOMAINS: "example.com,*.example.com,api.example.org"
+      SIGNATURE_LIFETIME: "1h"
+      READ_TIMEOUT: "10s"
+      WRITE_TIMEOUT: "10s"
+      IDLE_TIMEOUT: "60s"
+      READ_HEADER_TIMEOUT: "5s"
+      CERT_DIAL_TIMEOUT: "10s"
+      CERT_CACHE_TTL: "5m"
+      ALLOW_IP_LITERALS: "false"
+      LOG_LEVEL: "info"
+      # Set your private key via environment variable:
+      # PRIVATE_KEY_PEM: "${PRIVATE_KEY_PEM}"
+    # Uncomment to use env file instead:
+    # env_file:
+    #   - .env
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    # Optional: Resource limits
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '1'
+    #       memory: 256M
+    #     reservations:
+    #       cpus: '0.5'
+    #       memory: 128M
+
+

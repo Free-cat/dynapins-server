@@ -34,16 +34,22 @@ func main() {
 		"log_level", cfg.LogLevel,
 		"read_timeout", cfg.ReadTimeout.String(),
 		"write_timeout", cfg.WriteTimeout.String(),
-		"cert_dial_timeout", cfg.CertDialTimeout.String())
+		"read_header_timeout", cfg.ReadHeaderTimeout.String(),
+		"max_header_bytes", cfg.MaxHeaderBytes,
+		"cert_dial_timeout", cfg.CertDialTimeout.String(),
+		"cert_cache_ttl", cfg.CertCacheTTL.String(),
+		"allow_ip_literals", cfg.AllowIPLiterals)
 
 	// Create HTTP server
 	srv := server.New(cfg)
 	httpServer := &http.Server{
-		Addr:         fmt.Sprintf(":%d", cfg.Port),
-		Handler:      srv,
-		ReadTimeout:  cfg.ReadTimeout,
-		WriteTimeout: cfg.WriteTimeout,
-		IdleTimeout:  cfg.IdleTimeout,
+		Addr:              fmt.Sprintf(":%d", cfg.Port),
+		Handler:           srv,
+		ReadTimeout:       cfg.ReadTimeout,
+		WriteTimeout:      cfg.WriteTimeout,
+		IdleTimeout:       cfg.IdleTimeout,
+		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
+		MaxHeaderBytes:    cfg.MaxHeaderBytes,
 	}
 
 	// Start server in a goroutine

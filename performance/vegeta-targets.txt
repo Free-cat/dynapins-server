@@ -1,0 +1,10 @@
+# Vegeta load testing targets file
+# Format: METHOD URL
+
+GET http://localhost:8080/health
+GET http://localhost:8080/readiness
+GET http://localhost:8080/v1/pins?domain=google.com
+GET http://localhost:8080/v1/pins?domain=github.com
+GET http://localhost:8080/v1/pins?domain=cloudflare.com
+GET http://localhost:8080/v1/pins?domain=google.com&include-backup-pins=true
+

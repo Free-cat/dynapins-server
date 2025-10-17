@@ -1,25 +1,51 @@
 package domain
 
 import (
+	"net"
 	"strings"
 )
 
 // Validator validates domain names against a whitelist
 type Validator struct {
-	allowedDomains []string
+	allowedDomains  []string
+	allowIPLiterals bool
 }
 
 // NewValidator creates a new domain validator
 func NewValidator(allowedDomains []string) *Validator {
 	return &Validator{
-		allowedDomains: allowedDomains,
+		allowedDomains:  allowedDomains,
+		allowIPLiterals: false,
+	}
+}
+
+// NewValidatorWithOptions creates a validator with custom options
+func NewValidatorWithOptions(allowedDomains []string, allowIPLiterals bool) *Validator {
+	return &Validator{
+		allowedDomains:  allowedDomains,
+		allowIPLiterals: allowIPLiterals,
 	}
 }
 
 // IsAllowed checks if a domain is in the whitelist
 // Supports wildcards like "*.example.com"
+// Rejects IP literals unless allowIPLiterals is true
 func (v *Validator) IsAllowed(domain string) bool {
 	domain = strings.ToLower(strings.TrimSpace(domain))
+
+	// Reject IP literals (IPv4 and IPv6) unless explicitly allowed
+	if !v.allowIPLiterals {
+		if net.ParseIP(domain) != nil {
+			return false
+		}
+		// Also check for [IPv6] format
+		if strings.HasPrefix(domain, "[") && strings.HasSuffix(domain, "]") {
+			ip := domain[1 : len(domain)-1]
+			if net.ParseIP(ip) != nil {
+				return false
+			}
+		}
+	}
 
 	for _, allowed := range v.allowedDomains {
 		allowed = strings.ToLower(strings.TrimSpace(allowed))

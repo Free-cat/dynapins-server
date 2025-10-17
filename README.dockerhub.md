@@ -8,8 +8,8 @@
 ## Quick Start
 
 ```bash
-# Generate Ed25519 key
-openssl genpkey -algorithm Ed25519 -out private_key.pem
+# Generate ECDSA P-256 key
+openssl ecparam -genkey -name prime256v1 -noout -out private_key.pem
 
 # Run the server
 docker run -p 8080:8080 \
@@ -25,12 +25,13 @@ curl "http://localhost:8080/v1/pins?domain=example.com"
 
 ## Features
 
-- 🔐 **Ed25519 Signing** - Cryptographic signatures for certificate pins
+- 🔐 **ECDSA P-256 Signing** - JWS (ES256) signatures for certificate pins
 - 🌐 **Domain Whitelist** - Control which domains are allowed (with wildcard support)
-- 🚀 **High Performance** - Built in Go, <200ms response times
+- 🚀 **High Performance** - Built in Go, certificate caching, <200ms response times
 - 📦 **Stateless** - No database required
 - 🏥 **Health Checks** - Built-in `/health` and `/readiness` endpoints
 - 🔧 **Fully Configurable** - All settings via environment variables
+- 🔒 **Security Hardened** - Non-root user, IP literal blocking, configurable timeouts
 
 ## Supported Platforms
 
@@ -45,31 +46,43 @@ All configuration is done via environment variables:
 |----------|----------|---------|-------------|
 | `PORT` | No | `8080` | Server port |
 | `ALLOWED_DOMAINS` | **Yes** | - | Comma-separated domains (supports wildcards) |
-| `PRIVATE_KEY_PEM` | **Yes** | - | Ed25519 private key (PEM format) |
-| `SIGNATURE_LIFETIME` | No | `1h` | Signature validity period |
+| `PRIVATE_KEY_PEM` | **Yes** | - | ECDSA P-256 private key (PEM format) |
+| `SIGNATURE_LIFETIME` | No | `1h` | JWS signature validity period |
 | `READ_TIMEOUT` | No | `10s` | HTTP read timeout |
 | `WRITE_TIMEOUT` | No | `10s` | HTTP write timeout |
+| `READ_HEADER_TIMEOUT` | No | `5s` | Read header timeout (Slowloris protection) |
+| `MAX_HEADER_BYTES` | No | `1048576` | Max header size in bytes (1MB) |
 | `CERT_DIAL_TIMEOUT` | No | `10s` | TLS connection timeout |
+| `CERT_CACHE_TTL` | No | `5m` | Certificate cache TTL (0 to disable) |
+| `ALLOW_IP_LITERALS` | No | `false` | Allow IP addresses (dev only) |
 | `LOG_LEVEL` | No | `info` | Log level (debug/info/warn/error) |
 
 ## API Endpoints
 
 ### Get Certificate Pins
 ```bash
+# Get primary pin only
 GET /v1/pins?domain=example.com
+
+# Include backup pin (leaf + intermediate)
+GET /v1/pins?domain=example.com&include-backup-pins=true
 ```
 
 **Response:**
 ```json
 {
+  "jws": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImExYjJjM2Q0In0.eyJkb21haW4i..."
+}
+```
+
+**Decoded JWS Payload:**
+```json
+{
   "domain": "example.com",
   "pins": ["b7f3e6a1c2d3..."],
-  "created": "2025-10-17T08:00:00Z",
-  "expires": "2025-10-17T09:00:00Z",
-  "ttl_seconds": 3600,
-  "keyId": "a1b2c3d4",
-  "alg": "Ed25519",
-  "signature": "MEQCIG3..."
+  "iat": 1729588800,
+  "exp": 1729592400,
+  "ttl_seconds": 3600
 }
 ```
 
@@ -142,14 +155,17 @@ services:
       retries: 3
 ```
 
-## Generate Ed25519 Key
+## Generate ECDSA P-256 Key
 
 ```bash
-# Generate private key
-openssl genpkey -algorithm Ed25519 -out private_key.pem
+# Generate private key (ECDSA P-256)
+openssl ecparam -genkey -name prime256v1 -noout -out private_key.pem
 
 # Extract public key (for client verification)
-openssl pkey -in private_key.pem -pubout -out public_key.pem
+openssl ec -in private_key.pem -pubout -out public_key.pem
+
+# Optional: Convert to PKCS#8 format
+openssl pkcs8 -topk8 -nocrypt -in private_key.pem -out private_key_pkcs8.pem
 ```
 
 ## Kubernetes Deployment
@@ -227,8 +243,10 @@ But NOT:
 2. **Use Kubernetes Secrets** or similar for production
 3. **Run behind HTTPS** - Use reverse proxy with TLS
 4. **Restrict allowed domains** - Only whitelist domains you control
-5. **Monitor access logs** - Track usage patterns
-6. **Rotate keys periodically** - Update keys and distribute new public keys to clients
+5. **Verify JWS signatures** - Clients must verify signatures before trusting pins
+6. **Monitor access logs** - Track usage patterns
+7. **Rotate keys periodically** - Update keys and distribute new public keys to clients
+8. **Disable IP literals** - Keep `ALLOW_IP_LITERALS=false` in production
 
 ## Performance
 
