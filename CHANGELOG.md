@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2025-10-18
+
+### Fixed
+- Set TLS MinVersion to 1.2 for certificate retrieval (G402 security fix)
+- Add proper error handling for JSON encoding in HTTP handlers (G104)
+- Fix golangci-lint compatibility with Go 1.25
+- Simplify CI security scanning to work on all GitHub plans
+
+### Security
+- Enhanced TLS security by enforcing minimum TLS 1.2 for external connections
+- Improved error handling throughout HTTP handlers
+
 ## [0.2.0] - 2025-10-17
 
 ### Added
@@ -55,7 +67,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stateless architecture with no database requirements
 - Environment variable-based configuration
 
-[Unreleased]: https://github.com/Free-cat/dynapins-server/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Free-cat/dynapins-server/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/Free-cat/dynapins-server/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Free-cat/dynapins-server/compare/v0.0.1...v0.2.0
 [0.0.1]: https://github.com/Free-cat/dynapins-server/releases/tag/v0.0.1
 

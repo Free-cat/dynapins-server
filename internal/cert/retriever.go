@@ -86,6 +86,7 @@ func (r *Retriever) fetchCertificates(domain string) ([]*x509.Certificate, error
 		&tls.Config{
 			ServerName:         domain,
 			InsecureSkipVerify: false, // We want to verify the cert chain
+			MinVersion:         tls.VersionTLS12,
 		},
 	)
 	if err != nil {

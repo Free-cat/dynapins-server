@@ -145,9 +145,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
+	if err := json.NewEncoder(w).Encode(map[string]string{
 		"status": "healthy",
-	})
+	}); err != nil {
+		logger.Error("Failed to encode health response", "error", err)
+	}
 }
 
 // handleReadiness handles GET /readiness - readiness check with crypto validation
@@ -161,28 +163,34 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 	if s.config.PrivateKey == nil || s.config.PublicKey == nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{
+		if err := json.NewEncoder(w).Encode(map[string]string{
 			"status": "not ready",
 			"reason": "crypto keys not initialized",
-		})
+		}); err != nil {
+			logger.Error("Failed to encode readiness error response", "error", err)
+		}
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":          "ready",
 		"allowed_domains": len(s.config.AllowedDomains),
 		"key_id":          s.keyID,
-	})
+	}); err != nil {
+		logger.Error("Failed to encode readiness response", "error", err)
+	}
 }
 
 // writeError writes an error response
 func writeError(w http.ResponseWriter, message string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(models.Error{
+	if err := json.NewEncoder(w).Encode(models.Error{
 		Error: message,
 		Code:  code,
-	})
+	}); err != nil {
+		logger.Error("Failed to encode error response", "error", err)
+	}
 }
