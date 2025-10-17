@@ -94,10 +94,6 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-      actions: read
     
     steps:
       - name: Checkout code
@@ -115,9 +111,9 @@ jobs:
           govulncheck ./...
 
       - name: Run Gosec Security Scanner
-        uses: securego/gosec@master
-        with:
-          args: '-no-fail -fmt sarif -out results.sarif ./...'
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          gosec -fmt=text ./...
 
   docker:
     name: Docker Build
