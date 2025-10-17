@@ -255,12 +255,6 @@ func createTestServerWithFakeRetrieverAndDomains(t *testing.T, domains []string)
 	return NewWithRetriever(cfg, fakeRetriever), fakeRetriever
 }
 
-// Helper for old-style tests (without retriever access)
-func createTestServerWithDomains(t *testing.T, domains []string) *Server {
-	server, _ := createTestServerWithFakeRetrieverAndDomains(t, domains)
-	return server
-}
-
 // TestHandleGetPins_BackupPins tests the include-backup-pins parameter
 func TestHandleGetPins_BackupPins(t *testing.T) {
 	server, retriever := createTestServerWithFakeRetriever(t, []string{"example.com"})

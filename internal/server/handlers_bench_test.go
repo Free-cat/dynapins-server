@@ -4,9 +4,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/tls"
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -15,69 +13,7 @@ import (
 	"pinning-server/internal/config"
 )
 
-// Mock certificate server for testing without external dependencies
-type mockCertServer struct {
-	listener net.Listener
-	address  string
-}
-
-func newMockCertServer(t *testing.T) *mockCertServer {
-	t.Helper()
-
-	// Use the same mock setup as in cert package
-	cert, err := tls.LoadX509KeyPair("testdata/cert.pem", "testdata/key.pem")
-	if err != nil {
-		// Generate a self-signed cert if testdata doesn't exist
-		cert = generateSelfSignedCert(t)
-	}
-
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		MinVersion:   tls.VersionTLS12,
-	}
-
-	listener, err := tls.Listen("tcp", "127.0.0.1:0", tlsConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	server := &mockCertServer{
-		listener: listener,
-		address:  listener.Addr().String(),
-	}
-
-	// Accept connections in background
-	go func() {
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			conn.Close()
-		}
-	}()
-
-	return server
-}
-
-func (m *mockCertServer) Close() {
-	if m.listener != nil {
-		m.listener.Close()
-	}
-}
-
-func (m *mockCertServer) Address() string {
-	return m.address
-}
-
-func generateSelfSignedCert(t *testing.T) tls.Certificate {
-	t.Helper()
-	// This is a helper - actual implementation in mock_server_test.go
-	// For benchmarks, we'll use a simplified approach
-	return tls.Certificate{}
-}
-
-// BenchmarkHandleGetPins benchmarks the /v1/pins endpoint with mock server
+// BenchmarkHandleGetPins benchmarks the /v1/pins endpoint
 func BenchmarkHandleGetPins(b *testing.B) {
 	// For benchmark, we'll skip the actual cert retrieval
 	// and focus on the handler logic performance
