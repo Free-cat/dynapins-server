@@ -25,7 +25,7 @@ This project and everyone participating in it is governed by our commitment to f
 Found a bug? Please help us fix it!
 
 1. **Check existing issues** - Someone might have already reported it
-2. **Create a new issue** - Use our [bug report template](https://github.com/Free-cat/dynapins-server/issues/new)
+2. **Create a new issue** - Use our [bug report template](https://github.com/Free-cat/dynapins-server/issues/new?template=bug_report.yml)
 3. **Provide details**:
    - Clear title and description
    - Steps to reproduce
@@ -38,7 +38,7 @@ Found a bug? Please help us fix it!
 Have an idea for improvement?
 
 1. **Check existing issues** - Your idea might already be discussed
-2. **Open a feature request** - Use our [feature request template](https://github.com/Free-cat/dynapins-server/issues/new)
+2. **Open a feature request** - Use our [feature request template](https://github.com/Free-cat/dynapins-server/issues/new?template=feature_request.yml)
 3. **Describe your suggestion**:
    - Clear use case
    - Expected behavior
@@ -266,8 +266,9 @@ Bad commit messages:
 
 ### Getting Help
 
-- **Issues** - Ask questions via [GitHub Issues](https://github.com/Free-cat/dynapins-server/issues)
-- **Discussions** - Join [GitHub Discussions](https://github.com/Free-cat/dynapins-server/discussions)
+- **New Issue** - Report bugs or request features: [Create Issue](https://github.com/Free-cat/dynapins-server/issues/new/choose)
+- **Issues** - Browse existing issues: [GitHub Issues](https://github.com/Free-cat/dynapins-server/issues)
+- **Discussions** - Ask questions: [GitHub Discussions](https://github.com/Free-cat/dynapins-server/discussions)
 - **Documentation** - Check our [README](README.md)
 
 ### Staying Updated
