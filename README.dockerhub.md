@@ -246,9 +246,9 @@ But NOT:
 
 ## Links
 
-- 📖 **Full Documentation**: [GitHub Repository](https://github.com/freecats/ssl_pinning)
-- 🐛 **Issues & Support**: [GitHub Issues](https://github.com/freecats/ssl_pinning/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/freecats/ssl_pinning/discussions)
+- 📖 **Full Documentation**: [GitHub Repository](https://github.com/Free-cat/ssl_pinning)
+- 🐛 **Issues & Support**: [GitHub Issues](https://github.com/Free-cat/ssl_pinning/issues)
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/Free-cat/ssl_pinning/discussions)
 
 ## License
 
